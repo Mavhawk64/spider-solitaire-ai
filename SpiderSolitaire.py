@@ -3,9 +3,21 @@ from bcolors import *
 
 # 4 cols of 5 downs and 1 up; 6 cols of 4 downs and 1 up; 5 * 10 draw cards
 class SpiderSolitaire:
+    class RewardState:
+        def __init__(self, exposed_hidden_card=False, created_empty_pile=False, built_sequence=False, built_on_higher_card_out_of_suit=False, maximized_card_exposure_before_new_deal=False):
+            self.exposed_hidden_card = exposed_hidden_card
+            self.created_empty_pile = created_empty_pile
+            self.built_sequence = built_sequence
+            self.built_on_higher_card_out_of_suit = built_on_higher_card_out_of_suit
+            self.maximized_card_exposure_before_new_deal = maximized_card_exposure_before_new_deal
+    
+    
     def __init__(self,suits=4,seed=None):
         self.previous_states = set()
+        self.previous_games = set()
         self.stuck_moves = 0
+        self.reward_state = self.RewardState()
+        self.draw_count = 0
         
         # 104 cards
         # 1 suit -> 13 cards * 8
@@ -42,6 +54,7 @@ class SpiderSolitaire:
         """Draws one card for each column if available."""
         if len(self.deck.cards) < 10:
             print("Not enough cards in the deck to draw.")
+            self.draw_count += 1
             return
 
         for column in self.tableau:
@@ -55,7 +68,7 @@ class SpiderSolitaire:
         """Returns a string representation of the current game state."""
         state = ''
         for column in self.tableau:
-            state += ''.join([f'{card.rank}{card.suit}' for card in column if card.face_up])
+            state += ''.join([f'{card.display()}' for card in column if card.face_up])
             state += '|'
         return state
 
@@ -64,9 +77,14 @@ class SpiderSolitaire:
         current_state = self.get_game_state()
         if current_state in self.previous_states:
             self.stuck_moves += 1
+            # maybe we have maximized our card exposure before a new deal
+            # this may not be the best or correct way, but let's just see if current_state was 2 moves ago (move 1 card to a spot and back again)
+            # if current_state == self.previous_states[-2]:
+            # self.reward_state.maximized_card_exposure_before_new_deal = True
         else:
             self.stuck_moves = 0
             self.previous_states.add(current_state)
+            self.previous_games.add(self)
 
     def find_bundles(self, column):
         """Finds all possible, movable bundles in a given column."""
@@ -75,11 +93,15 @@ class SpiderSolitaire:
             if not (column[i].face_up and (i == len(column)-1 or column[i].rank == column[i+1].rank + 1) and (i == len(column)-1 or column[i].suit == column[i+1].suit)):
                 break
             bundles.append(column[i:])
+
         return bundles
 
     def can_move_bundle(self, bundle, target_column):
         """Checks if a bundle can be moved to the target column."""
         if not bundle:
+            return False
+        # check if the bundle is all the same suit
+        if not all(card.suit == bundle[0].suit for card in bundle):
             return False
         if not target_column or len(target_column) == 0:  # Target column is empty
             return True
@@ -100,6 +122,16 @@ class SpiderSolitaire:
             # Move the bundle
             self.tableau[source_column_index] = source_column[:-bundle_length]
             self.tableau[target_column_index].extend(bundle)
+            # check if this created an empty pile
+            if len(source_column) == 0:
+                self.reward_state.created_empty_pile = True
+            # check if this built a sequence by checking to see if the target column's last card is the same suit as the bundle's first card
+            if target_column and target_column[-1].suit == bundle[0].suit:
+                self.reward_state.built_sequence = True
+            # check if this built on a higher card out of suit
+            # this is always true unless we move a bundle to an empty column
+            if target_column and len(target_column) != 0 and target_column[-1].rank > bundle[0].rank and target_column[-1].suit != bundle[0].suit:
+                self.reward_state.built_on_higher_card_out_of_suit = True 
             self.remove_complete_sets()
             return True
         else:
@@ -119,6 +151,9 @@ class SpiderSolitaire:
             # Flip the next card in the source column, if there is one
             if self.tableau[column_index] and not self.tableau[column_index][-1].face_up:
                 self.tableau[column_index][-1].face_up = True
+                self.reward_state.exposed_hidden_card = True
+            elif len(column) == 0:
+                self.reward_state.created_empty_pile = True
         self.update_game_state()
 
     def is_complete_set(self, cards):
@@ -153,7 +188,7 @@ class SpiderSolitaire:
     def display_board(self):
             """Displays the current state of the game board."""
             print("Spider Solitaire Board:")
-            max_length = max(len(column) for column in self.tableau)
+            max_length = max([len(column) for column in self.tableau])
             for row in range(max_length):
                 row_display = []
                 for column in self.tableau:

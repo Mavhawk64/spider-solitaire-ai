@@ -21,5 +21,6 @@ while not game.has_won():
         game.move_bundle(col1,col2,bundle)
         print('\n')
         game.display_board()
+        print(game.get_game_state())
     except:
         break
