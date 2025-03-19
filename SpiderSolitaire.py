@@ -48,7 +48,8 @@ class SpiderSolitaire:
             self.deck.add_suit(0)
             self.deck.add_suit(1)
         else:
-            self.deck = Deck(2, 4, seed)  # Standard Spider Solitaire uses 2 decks.
+            # Standard Spider Solitaire uses 2 decks.
+            self.deck = Deck(2, 4, seed)
         self.deck.shuffle()
         self.tableau: List[List[Card]] = [[] for _ in range(10)]  # 10 columns.
         self.deal_initial_cards()
@@ -111,7 +112,7 @@ class SpiderSolitaire:
         self.move_count += 1
         return True
 
-    def draw_cards(self):
+    def draw_cards(self) -> bool:
         """Draw one card for each column if available.
         Note: This method does not call save_state() internally.
         The calling code should call save_state() before drawing if an undo is desired.
@@ -119,7 +120,7 @@ class SpiderSolitaire:
         if len(self.deck.cards) < 10:
             print("Not enough cards in the deck to draw.")
             self.draw_count += 1
-            return
+            return False
         self.save_state()
         for column in self.tableau:
             card = self.deck.deal()
@@ -129,6 +130,7 @@ class SpiderSolitaire:
         self.remove_complete_sets()
         self.just_drew = True
         self.move_count += 1
+        return True
 
     def get_game_state(self) -> str:
         """Return a string representation of the current game state."""
