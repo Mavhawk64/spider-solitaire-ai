@@ -1,201 +1,255 @@
-import Deck
-from bcolors import *
+import copy
+from typing import List
 
-# 4 cols of 5 downs and 1 up; 6 cols of 4 downs and 1 up; 5 * 10 draw cards
+from bcolors import *
+from Card import Card
+from Deck import Deck
+
+
 class SpiderSolitaire:
     class RewardState:
-        def __init__(self, exposed_hidden_card=False, created_empty_pile=False, built_sequence=False, built_on_higher_card_out_of_suit=False, maximized_card_exposure_before_new_deal=False):
+        def __init__(
+            self,
+            exposed_hidden_card=False,
+            created_empty_pile=False,
+            built_sequence=False,
+            built_on_higher_card_out_of_suit=False,
+            maximized_card_exposure_before_new_deal=False,
+        ):
             self.exposed_hidden_card = exposed_hidden_card
             self.created_empty_pile = created_empty_pile
             self.built_sequence = built_sequence
             self.built_on_higher_card_out_of_suit = built_on_higher_card_out_of_suit
-            self.maximized_card_exposure_before_new_deal = maximized_card_exposure_before_new_deal
-    
-    
-    def __init__(self,suits=4,seed=None):
-        self.previous_states = set()
-        self.previous_games = set()
+            self.maximized_card_exposure_before_new_deal = (
+                maximized_card_exposure_before_new_deal
+            )
+
+    def __init__(
+        self, suits: int = 4, seed: int | float | str | bytes | bytearray | None = None
+    ):
+        # History stack for undo functionality.
+        self.state_history: List[dict] = []
         self.stuck_moves = 0
         self.reward_state = self.RewardState()
         self.draw_count = 0
-        
-        # 104 cards
-        # 1 suit -> 13 cards * 8
-        # 2 suits -> 2*13 cards * 4
-        # 3 suits -> 3*13 cards * 2 = 78; 2*13 cards = 26; 78 + 26 = 104
-        # 4 suits -> 4*13 cards * 2 = 104
-        # switch case
+        self.completed_sets = 0
+        self.undo_count = 0
+        self.undo_from_stock_count = 0
+        self.just_drew = False
+        self.move_count = 0
+
+        # Build the deck based on the number of suits.
         if suits == 1:
-            self.deck = Deck.Deck(8,1,seed)
+            self.deck = Deck(8, 1, seed)
         elif suits == 2:
-            self.deck = Deck.Deck(4,2,seed)
+            self.deck = Deck(4, 2, seed)
         elif suits == 3:
-            self.deck = Deck.Deck(2,3,seed)
+            self.deck = Deck(2, 3, seed)
             self.deck.add_suit(0)
             self.deck.add_suit(1)
         else:
-            self.deck = Deck.Deck(2,4,seed)  # Using 2 decks for Spider Solitaire
+            self.deck = Deck(2, 4, seed)  # Standard Spider Solitaire uses 2 decks.
         self.deck.shuffle()
-        self.tableau = [[] for _ in range(10)]  # 10 columns in the tableau
+        self.tableau: List[List[Card]] = [[] for _ in range(10)]  # 10 columns.
         self.deal_initial_cards()
 
     def deal_initial_cards(self):
-        # Deal cards to the tableau with the specific rules of Spider Solitaire
+        """Deal cards to the tableau according to Spider Solitaire rules."""
         for i in range(10):
-            for j in range(6 if i < 4 else 5):  # First 4 cols get 6 cards, rest get 5
-                card = self.deck.cards.pop()  # Take the top card from the deck
+            for j in range(6 if i < 4 else 5):
+                card = self.deck.cards.pop()
                 self.tableau[i].append(card)
-
-        # Turn the top card of each column face up
+        # Turn the top card of each column face up.
         for column in self.tableau:
-            column[-1].face_up = True
+            if column:
+                column[-1].face_up = True
+
+    def save_state(self):
+        """
+        Save a snapshot of the current game state.
+        This snapshot includes the tableau, the deck, draw count, stuck moves, and reward state.
+        """
+        snapshot = {
+            "tableau": copy.deepcopy(self.tableau),
+            "deck": copy.deepcopy(self.deck.cards),
+            "draw_count": self.draw_count,
+            "stuck_moves": self.stuck_moves,
+            "reward_state": copy.deepcopy(self.reward_state),
+            "completed_sets": self.completed_sets,
+            "undo_count": self.undo_count,
+            "undo_from_stock_count": self.undo_from_stock_count,
+        }
+        self.state_history.append(snapshot)
+
+    def restore_state(self, snapshot: dict):
+        """Restore the game state from a snapshot."""
+        self.tableau = snapshot["tableau"]
+        self.deck.cards = snapshot["deck"]
+        self.draw_count = snapshot["draw_count"]
+        self.stuck_moves = snapshot["stuck_moves"]
+        self.reward_state = snapshot["reward_state"]
+
+    def can_undo(self) -> bool:
+        """Check if there are any saved states to undo."""
+        return bool(self.state_history)
+
+    def undo(self) -> bool:
+        """
+        Undo the player's latest move.
+        Returns True if successful, False if no previous state exists.
+        """
+        if not self.state_history:
+            print("No moves to undo.")
+            return False
+        # Pop the last snapshot and restore it.
+        snapshot = self.state_history.pop()
+        self.restore_state(snapshot)
+        self.undo_count += 1
+        if self.just_drew:
+            self.undo_from_stock_count += 1
+            self.just_drew = False
+        self.move_count += 1
+        return True
 
     def draw_cards(self):
-        """Draws one card for each column if available."""
+        """Draw one card for each column if available.
+        Note: This method does not call save_state() internally.
+        The calling code should call save_state() before drawing if an undo is desired.
+        """
         if len(self.deck.cards) < 10:
             print("Not enough cards in the deck to draw.")
             self.draw_count += 1
             return
-
+        self.save_state()
         for column in self.tableau:
             card = self.deck.deal()
             if card:
                 card.face_up = True
                 column.append(card)
         self.remove_complete_sets()
+        self.just_drew = True
+        self.move_count += 1
 
-    def get_game_state(self):
-        """Returns a string representation of the current game state."""
-        state = ''
+    def get_game_state(self) -> str:
+        """Return a string representation of the current game state."""
+        state = ""
         for column in self.tableau:
-            state += ''.join([f'{card.display()}' for card in column if card.face_up])
-            state += '|'
+            state += "".join([f"{card.display()}" for card in column if card.face_up])
+            state += "|"
         return state
 
-    def update_game_state(self):
-        """Updates the set of previous game states and checks for repetition."""
-        current_state = self.get_game_state()
-        if current_state in self.previous_states:
-            self.stuck_moves += 1
-            # maybe we have maximized our card exposure before a new deal
-            # this may not be the best or correct way, but let's just see if current_state was 2 moves ago (move 1 card to a spot and back again)
-            # if current_state == self.previous_states[-2]:
-            # self.reward_state.maximized_card_exposure_before_new_deal = True
-        else:
-            self.stuck_moves = 0
-            self.previous_states.add(current_state)
-            self.previous_games.add(self)
-
-    def find_bundles(self, column):
-        """Finds all possible, movable bundles in a given column."""
-        bundles = []
-        for i in range(len(column)-1, -1, -1):
-            if not (column[i].face_up and (i == len(column)-1 or column[i].rank == column[i+1].rank + 1) and (i == len(column)-1 or column[i].suit == column[i+1].suit)):
+    def find_bundles(self, column: List[Card]) -> List[List[Card]]:
+        """
+        Find all possible movable bundles in a given column.
+        A bundle is a sequence of face-up cards in descending order and of the same suit.
+        """
+        bundles: List[List[Card]] = []
+        for i in range(len(column) - 1, -1, -1):
+            if not (
+                column[i].face_up
+                and (i == len(column) - 1 or column[i].rank == column[i + 1].rank + 1)
+                and (i == len(column) - 1 or column[i].suit == column[i + 1].suit)
+            ):
                 break
             bundles.append(column[i:])
-
         return bundles
 
-    def can_move_bundle(self, bundle, target_column):
-        """Checks if a bundle can be moved to the target column."""
-        if not bundle:
+    def can_move_bundle(self, bundle: List[Card], target_column: List[Card]) -> bool:
+        """
+        Check if a bundle can be moved to the target column.
+        """
+        if not bundle or not all(card.suit == bundle[0].suit for card in bundle):
             return False
-        # check if the bundle is all the same suit
-        if not all(card.suit == bundle[0].suit for card in bundle):
-            return False
-        if not target_column or len(target_column) == 0:  # Target column is empty
+        if not target_column or len(target_column) == 0:
             return True
         return bundle[0].rank == target_column[-1].rank - 1
 
-    def move_bundle(self, source_column_index, target_column_index, bundle_length):
-        """Moves a bundle from the source column to the target column."""
+    def move_bundle(
+        self, source_column_index: int, target_column_index: int, bundle_length: int
+    ) -> bool:
+        """
+        Move a bundle from the source column to the target column.
+        Note: Do not call save_state() inside this method. The calling code should
+        have saved the state before invoking this move.
+        """
         source_column = self.tableau[source_column_index]
         target_column = self.tableau[target_column_index]
 
-        # Check if the move is valid
         if not source_column or len(source_column) < bundle_length:
             print("Invalid move: No such bundle in the source column.")
             return False
 
         bundle = source_column[-bundle_length:]
         if self.can_move_bundle(bundle, target_column):
-            # Move the bundle
+            self.save_state()
             self.tableau[source_column_index] = source_column[:-bundle_length]
             self.tableau[target_column_index].extend(bundle)
-            # check if this created an empty pile
-            if len(source_column) == 0:
-                self.reward_state.created_empty_pile = True
-            # check if this built a sequence by checking to see if the target column's last card is the same suit as the bundle's first card
-            if target_column and target_column[-1].suit == bundle[0].suit:
-                self.reward_state.built_sequence = True
-            # check if this built on a higher card out of suit
-            # this is always true unless we move a bundle to an empty column
-            if target_column and len(target_column) != 0 and target_column[-1].rank > bundle[0].rank and target_column[-1].suit != bundle[0].suit:
-                self.reward_state.built_on_higher_card_out_of_suit = True 
             self.remove_complete_sets()
+            self.just_drew = False
+            self.move_count += 1
             return True
-        else:
-            print("Invalid move: Bundle cannot be moved to the target column.")
-            return False
+        print("Invalid move: Bundle cannot be moved to the target column.")
+        return False
 
     def remove_complete_sets(self):
-        """Removes complete sets (King to Ace of the same suit) from the tableau."""
-        column_index = -1
-        for column in self.tableau:
-            column_index += 1
+        """
+        Remove complete sets (King to Ace of the same suit) from the tableau.
+        Also, flip the next card in a column if it is face down.
+        Note: Automatic flips and removals are not separately saved; they are part of the move.
+        """
+        for idx, column in enumerate(self.tableau):
             if len(column) >= 13:
-                # Check if the last 13 cards form a complete set
                 if self.is_complete_set(column[-13:]):
-                    # Remove the complete set
                     del column[-13:]
-            # Flip the next card in the source column, if there is one
-            if self.tableau[column_index] and not self.tableau[column_index][-1].face_up:
-                self.tableau[column_index][-1].face_up = True
+                    self.reward_state.built_sequence = True
+                    self.completed_sets += 1
+            if column and not column[-1].face_up:
+                column[-1].face_up = True
                 self.reward_state.exposed_hidden_card = True
             elif len(column) == 0:
                 self.reward_state.created_empty_pile = True
-        self.update_game_state()
 
-    def is_complete_set(self, cards):
-        """Checks if the given cards form a complete set from King to Ace of the same suit."""
+    def is_complete_set(self, cards: List[Card]) -> bool:
+        """
+        Check if the given 13 cards form a complete set (King to Ace) of the same suit.
+        """
         if len(cards) != 13:
             return False
-        expected_rank = 13  # Start from King
+        expected_rank = 13  # Start from King.
         for card in cards:
             if card.rank != expected_rank or card.suit != cards[0].suit:
                 return False
             expected_rank -= 1
-        return expected_rank == 0  # True if the sequence ended with Ace
-        
+        return expected_rank == 0
+
     def show_bundles(self):
+        """Display all movable bundles in each column."""
         for i in range(10):
             print("Column %d:" % i)
-            for j in self.find_bundles(self.tableau[i]):
-                print('[', end='')
-                for k in j:
-                    print(k.display(), end='')
-                print(']', end=' ')
+            for bundle in self.find_bundles(self.tableau[i]):
+                print("[", end="")
+                for card in bundle:
+                    print(card.display(), end=" ")
+                print("]", end=" ")
             print()
-    
-    def has_won(self):
-        """Checks if the player has won the game."""
-        # Check if the player has won
+
+    def has_won(self) -> bool:
+        """Check if the player has won the game (all columns empty)."""
         for column in self.tableau:
             if len(column) > 0:
                 return False
         return True
 
     def display_board(self):
-            """Displays the current state of the game board."""
-            print("Spider Solitaire Board:")
-            max_length = max([len(column) for column in self.tableau])
-            for row in range(max_length):
-                row_display = []
-                for column in self.tableau:
-                    if row < len(column):
-                        row_display.append(column[row].display())
-                    else:
-                        row_display.append("   ")
-                print(" ".join(row_display))
-
-            print("\nDraw Pile: %s cards" % len(self.deck.cards))
+        """Display the current state of the game board."""
+        print("Spider Solitaire Board:")
+        max_length = max([len(column) for column in self.tableau])
+        for row in range(max_length):
+            row_display = []
+            for column in self.tableau:
+                if row < len(column):
+                    row_display.append(column[row].display())
+                else:
+                    row_display.append("   ")
+            print(" ".join(row_display))
+        print("\nDraw Pile: {} cards".format(len(self.deck.cards)))
