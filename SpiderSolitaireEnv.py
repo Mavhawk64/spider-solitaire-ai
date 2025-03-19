@@ -23,10 +23,10 @@ class SpiderSolitaireEnv(gym.Env):
         # State space: tableau card states (flipped/unflipped) + draw pile count
         self.observation_space = spaces.Box(
             # 10 columns, max 13 visible cards per column
-            low=0,
-            high=1,
+            low=-5000,
+            high=5000,
             shape=(10, 13),
-            dtype=np.int8,
+            dtype=np.int16,
         )
 
     def cantor_pair(self, k1: int, k2: int) -> int:
@@ -43,7 +43,7 @@ class SpiderSolitaireEnv(gym.Env):
         """
         Convert the game state into an RL-compatible format.
         """
-        tableau = np.zeros((10, 13), dtype=np.int8)
+        tableau = np.zeros((10, 13), dtype=np.int16)
         for col_idx, column in enumerate(self.game.tableau):
             # Only track last 13 cards max
             for row_idx, card in enumerate(column[-13:]):
