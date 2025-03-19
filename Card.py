@@ -8,6 +8,7 @@ class Card(object):
         self.suit = suit
         self.rank = rank
         self.face_up = False
+        self.known = False
 
     # fmt: off
     suit_names = ['Clubs', 'Diamonds', 'Spades', 'Hearts']
@@ -15,9 +16,13 @@ class Card(object):
     rank_names = [None, 'Ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King']
     # fmt: on
 
+    def turn_face_up(self):
+        self.face_up = True
+        self.known = True
+
     def display(self) -> str:
-        if not self.face_up or self.rank == 0:
-            return "[ ]"
+        if not self.face_up:
+            return "[ ]" if not self.known else "[$]"
         if self.rank == 10:
             return self.rank_names[self.rank] + self.suit_symbs[self.suit]
         return " " + self.rank_names[self.rank][0] + self.suit_symbs[self.suit]

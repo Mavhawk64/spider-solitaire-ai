@@ -4,6 +4,7 @@ from typing import List
 from bcolors import *
 from Card import Card
 from Deck import Deck
+from Move import Move
 
 
 class SpiderSolitaire:
@@ -37,6 +38,9 @@ class SpiderSolitaire:
         self.undo_from_stock_count = 0
         self.just_drew = False
         self.move_count = 0
+        self.suits = suits
+        self.seed = seed
+        self.latest_move: Move = None
 
         # Build the deck based on the number of suits.
         if suits == 1:
@@ -59,11 +63,11 @@ class SpiderSolitaire:
         for i in range(10):
             for j in range(6 if i < 4 else 5):
                 card = self.deck.cards.pop()
-                self.tableau[i].append(card)
+                self.tableau[i].append(card)  # Start with blank cards
         # Turn the top card of each column face up.
         for column in self.tableau:
             if column:
-                column[-1].face_up = True
+                column[-1].turn_face_up()
 
     def save_state(self):
         """
@@ -75,20 +79,22 @@ class SpiderSolitaire:
             "deck": copy.deepcopy(self.deck.cards),
             "draw_count": self.draw_count,
             "stuck_moves": self.stuck_moves,
-            "reward_state": copy.deepcopy(self.reward_state),
             "completed_sets": self.completed_sets,
             "undo_count": self.undo_count,
             "undo_from_stock_count": self.undo_from_stock_count,
+            "latest_move": self.latest_move,
         }
         self.state_history.append(snapshot)
+        self.reward_state = self.RewardState()
 
     def restore_state(self, snapshot: dict):
-        """Restore the game state from a snapshot."""
+        """Restore the game state from a snapshot (refreshes reward_state to prevent undo spam)."""
         self.tableau = snapshot["tableau"]
         self.deck.cards = snapshot["deck"]
         self.draw_count = snapshot["draw_count"]
         self.stuck_moves = snapshot["stuck_moves"]
-        self.reward_state = snapshot["reward_state"]
+        self.reward_state = self.RewardState()
+        self.latest_move = snapshot["latest_move"]
 
     def can_undo(self) -> bool:
         """Check if there are any saved states to undo."""
@@ -103,8 +109,25 @@ class SpiderSolitaire:
             print("No moves to undo.")
             return False
         # Pop the last snapshot and restore it.
+        known_tableau = copy.deepcopy(self.tableau)
+        last_move = copy.deepcopy(self.latest_move)
         snapshot = self.state_history.pop()
         self.restore_state(snapshot)
+
+        # we need to set any cards that were flipped to known
+        if last_move is not None and last_move.move_type == "move":
+            for j in range(
+                min(
+                    len(known_tableau[last_move.source]),
+                    len(self.tableau[last_move.source]),
+                )
+            ):
+                if (
+                    known_tableau[last_move.source][j].face_up
+                    != self.tableau[last_move.source][j].face_up
+                ):
+                    self.tableau[last_move.source][j].known = True
+
         self.undo_count += 1
         if self.just_drew:
             self.undo_from_stock_count += 1
@@ -125,11 +148,12 @@ class SpiderSolitaire:
         for column in self.tableau:
             card = self.deck.deal()
             if card:
-                card.face_up = True
+                card.turn_face_up()
                 column.append(card)
         self.remove_complete_sets()
         self.just_drew = True
         self.move_count += 1
+        self.latest_move = Move("draw", -1, -1, -1)
         return True
 
     def get_game_state(self) -> str:
@@ -139,6 +163,32 @@ class SpiderSolitaire:
             state += "".join([f"{card.display()}" for card in column if card.face_up])
             state += "|"
         return state
+
+    def get_possible_moves(self) -> List[Move]:
+        """Find all possible valid moves in the current game state."""
+        moves = []
+
+        # Check for valid card movements
+        for i, column in enumerate(self.tableau):
+            bundles = self.find_bundles(column)
+            if not bundles:
+                continue
+            for bundle in bundles:
+                for j, target_column in enumerate(self.tableau):
+                    if i == j:
+                        continue
+                    if self.can_move_bundle(bundle, target_column):
+                        moves.append(Move("move", i, j, len(bundle)))
+
+        # Check if a draw is possible
+        if len(self.deck.cards) >= 10:
+            moves.append(Move("draw", -1, -1, -1))
+
+        # Check if undo is possible
+        if self.can_undo():
+            moves.append(Move("undo", -1, -1, -1))
+
+        return moves
 
     def find_bundles(self, column: List[Card]) -> List[List[Card]]:
         """
@@ -189,6 +239,9 @@ class SpiderSolitaire:
             self.remove_complete_sets()
             self.just_drew = False
             self.move_count += 1
+            self.latest_move = Move(
+                "move", source_column_index, target_column_index, bundle_length
+            )
             return True
         print("Invalid move: Bundle cannot be moved to the target column.")
         return False
@@ -206,7 +259,7 @@ class SpiderSolitaire:
                     self.reward_state.built_sequence = True
                     self.completed_sets += 1
             if column and not column[-1].face_up:
-                column[-1].face_up = True
+                column[-1].turn_face_up()
                 self.reward_state.exposed_hidden_card = True
             elif len(column) == 0:
                 self.reward_state.created_empty_pile = True
