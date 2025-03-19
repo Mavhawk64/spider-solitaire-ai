@@ -8,6 +8,9 @@ import torch.optim as optim
 
 from SpiderSolitaireEnv import SpiderSolitaireEnv
 
+# 🚀 Get the device (CUDA if available, otherwise CPU)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # Define the DQN model
 class DQN(nn.Module):
@@ -45,9 +48,10 @@ class DQNAgent:
         # Replay memory
         self.memory = deque(maxlen=10000)
 
-        # Neural network & optimizer
-        self.model = DQN(state_size, action_size)
-        self.target_model = DQN(state_size, action_size)
+        # 🚀 Move models to GPU
+        self.model = DQN(state_size, action_size).to(device)
+        self.target_model = DQN(state_size, action_size).to(device)
+
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         self.loss_fn = nn.MSELoss()
 
@@ -66,9 +70,14 @@ class DQNAgent:
         """Choose an action based on an epsilon-greedy strategy."""
         if np.random.rand() < self.epsilon:
             return random.randrange(self.action_size)  # Random action (exploration)
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+
+        # 🚀 Convert state to tensor and move to GPU
+        state_tensor = torch.tensor(
+            state, dtype=torch.float32, device=device
+        ).unsqueeze(0)
+
         with torch.no_grad():
-            q_values = self.model(state_tensor)
+            q_values = self.model(state_tensor)  # Use GPU model
         return torch.argmax(q_values).item()  # Best action (exploitation)
 
     def replay(self, batch_size):
@@ -79,10 +88,13 @@ class DQNAgent:
         minibatch = random.sample(self.memory, batch_size)
 
         for state, action, reward, next_state, done in minibatch:
-            state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-            next_state_tensor = torch.tensor(next_state, dtype=torch.float32).unsqueeze(
-                0
-            )
+            # 🚀 Move states to GPU
+            state_tensor = torch.tensor(
+                state, dtype=torch.float32, device=device
+            ).unsqueeze(0)
+            next_state_tensor = torch.tensor(
+                next_state, dtype=torch.float32, device=device
+            ).unsqueeze(0)
 
             # Compute Q target
             with torch.no_grad():
@@ -109,5 +121,5 @@ class DQNAgent:
 
     def load(self, filename):
         """Load a trained model."""
-        self.model.load_state_dict(torch.load(filename))
+        self.model.load_state_dict(torch.load(filename, map_location=device))
         self.update_target_model()

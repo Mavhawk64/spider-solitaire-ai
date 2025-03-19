@@ -4,6 +4,10 @@ import torch
 from dqn_agent import DQNAgent
 from SpiderSolitaireEnv import SpiderSolitaireEnv
 
+# Initial Values
+NUM_SUITS = 4
+INITIAL_SEED = 42
+
 # 🚀 Use GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -13,15 +17,19 @@ BATCH_SIZE = 64
 TARGET_UPDATE_FREQUENCY = 10
 
 # Initialize environment
-env = SpiderSolitaireEnv(suits=4, seed=42)
+env = SpiderSolitaireEnv(suits=NUM_SUITS, seed=INITIAL_SEED)
 state_size = 10 * 13 + 1  # Tableau (10x13) + Draw Pile
 action_size = 100  # Placeholder, will be mapped dynamically
 
 # 🚀 Move DQNAgent to GPU
-agent = DQNAgent(state_size, action_size).to(device)
+agent = DQNAgent(state_size, action_size)
+agent.model.to(device)  # Move the main model to GPU
+agent.target_model.to(device)  # Move the target model to GPU
 
 for episode in range(EPISODES):
-    tableau, draw_pile = env.reset()
+    tableau, draw_pile = (
+        env.reset() if episode > 10 else env.reset(suits=NUM_SUITS, seed=INITIAL_SEED)
+    )
     state = np.append(tableau.flatten(), draw_pile)  # Flatten state
     state = torch.tensor(state, dtype=torch.float32, device=device)  # Move to GPU
 
