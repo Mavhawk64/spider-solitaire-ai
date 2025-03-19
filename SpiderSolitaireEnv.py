@@ -82,11 +82,13 @@ class SpiderSolitaireEnv(gym.Env):
         done = self.game.has_won()
         return observation, reward, done, {}
 
-    def reset(self) -> tuple[np.ndarray, int]:
+    def reset(
+        self, seed: int | float | str | bytes | bytearray | None = None
+    ) -> tuple[np.ndarray, int]:
         """
         Reset the game for a new episode.
         """
-        self.game = SpiderSolitaire(self.game.suits, self.game.seed)
+        self.game = SpiderSolitaire(suits=self.game.suits, seed=seed)
         return self._get_observation()
 
     def _calculate_reward(self, move: Move) -> int:
