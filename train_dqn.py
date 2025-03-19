@@ -27,9 +27,7 @@ agent.model.to(device)  # Move the main model to GPU
 agent.target_model.to(device)  # Move the target model to GPU
 
 for episode in range(EPISODES):
-    tableau, draw_pile = (
-        env.reset() if episode > 10 else env.reset(suits=NUM_SUITS, seed=INITIAL_SEED)
-    )
+    tableau, draw_pile = env.reset() if episode > 10 else env.reset(seed=INITIAL_SEED)
     state = np.append(tableau.flatten(), draw_pile)  # Flatten state
     state = torch.tensor(state, dtype=torch.float32, device=device)  # Move to GPU
 
