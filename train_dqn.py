@@ -9,7 +9,18 @@ NUM_SUITS = 4
 INITIAL_SEED = 42
 
 # 🚀 Use GPU if available
+print(f"Cuda is {'' if torch.cuda.is_available() else 'not '}available")
+print(
+    "Device Name:",
+    torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
+)
+print("Torch CUDA Version:", torch.version.cuda)
+print(
+    "Current Device:",
+    torch.cuda.current_device() if torch.cuda.is_available() else "No GPU",
+)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device.type}")
 
 # Hyperparameters
 EPISODES = 1000
