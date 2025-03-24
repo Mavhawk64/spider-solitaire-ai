@@ -1,11 +1,12 @@
 import SpiderSolitaire as ss
 
-game = ss.SpiderSolitaire(4, 0)
+game = ss.SpiderSolitaire(1, 0)
 # game.tableau[0][-2].known = True # Example of setting a card to known
 game.display_board()
 
 while not game.has_won():
     try:
+        print(game.get_possible_moves())
         play = input("Move, Draw, or Undo? (m/d/u): ").lower()
         if play == "d":
             game.draw_cards()

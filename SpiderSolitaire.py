@@ -4,7 +4,7 @@ from typing import List
 from bcolors import *
 from Card import Card
 from Deck import Deck
-from Move import Move
+from Moves import Move, Moves
 
 
 class SpiderSolitaire:
@@ -41,6 +41,7 @@ class SpiderSolitaire:
         self.suits = suits
         self.seed = seed
         self.latest_move: Move = None
+        self.all_moves = self.get_all_moves()
 
         # Build the deck based on the number of suits.
         if suits == 1:
@@ -58,10 +59,21 @@ class SpiderSolitaire:
         self.tableau: List[List[Card]] = [[] for _ in range(10)]  # 10 columns.
         self.deal_initial_cards()
 
+    def get_all_moves(self) -> Moves:
+        moves = Moves()
+        for i in range(10):
+            for j in range(10):
+                for k in range(1, 13):
+                    if i != j:
+                        moves.append(Move("move", i, j, k))
+        moves.append(Move("draw", -1, -1, -1))
+        moves.append(Move("undo", -1, -1, -1))
+        return moves
+
     def deal_initial_cards(self):
         """Deal cards to the tableau according to Spider Solitaire rules."""
         for i in range(10):
-            for j in range(6 if i < 4 else 5):
+            for _ in range(6 if i < 4 else 5):
                 card = self.deck.cards.pop()
                 self.tableau[i].append(card)  # Start with blank cards
         # Turn the top card of each column face up.
@@ -99,6 +111,10 @@ class SpiderSolitaire:
     def can_undo(self) -> bool:
         """Check if there are any saved states to undo."""
         return bool(self.state_history)
+
+    def can_draw(self) -> bool:
+        """Check if the deck has enough cards to draw."""
+        return len(self.deck.cards) >= 10
 
     def undo(self) -> bool:
         """
@@ -164,9 +180,13 @@ class SpiderSolitaire:
             state += "|"
         return state
 
-    def get_possible_moves(self) -> List[Move]:
+    def get_num_clear_piles(self) -> int:
+        """Return the number of empty piles."""
+        return sum([1 for column in self.tableau if len(column) == 0])
+
+    def get_possible_moves(self) -> Moves:
         """Find all possible valid moves in the current game state."""
-        moves = []
+        moves = Moves([])
 
         # Check for valid card movements
         for i, column in enumerate(self.tableau):
@@ -294,6 +314,44 @@ class SpiderSolitaire:
             if len(column) > 0:
                 return False
         return True
+
+    def get_reward(self, move: Move) -> int:
+        """
+        Calculate the reward for the given move.
+        The reward is based on the changes in the game state.
+        Card Revealed: +10 points
+        Foundation Completed: +130 points
+        Undo: -5 points
+        Hints: No points deducted
+        Undo from Stock: -100 points
+        """
+        reward = 0
+        if self.reward_state.exposed_hidden_card:
+            reward += 10
+        if self.reward_state.built_sequence:
+            reward += 130
+        if move.move_type == "undo":
+            reward -= 5
+            if self.just_drew:
+                reward -= 100
+        if self.has_won():
+            reward += 1e6 / self.move_count
+        return reward
+
+    def execute_move(self, move: Move) -> tuple[int, bool]:
+        """
+        Execute a move based on the given Move object.
+        Returns the reward and a boolean indicating if the game is over.
+        """
+        if move.move_type == "move":
+            self.move_bundle(move.source, move.target, move.bundle_length)
+        elif move.move_type == "draw" and self.can_draw():
+            self.draw_cards()
+        elif move.move_type == "undo" and self.can_undo():
+            self.undo()
+        else:
+            raise ValueError("Invalid move type.")  # Should never reach this point.
+        return self.get_reward(move), self.has_won()
 
     def display_board(self):
         """Display the current state of the game board."""
